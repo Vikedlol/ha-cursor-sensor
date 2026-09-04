@@ -19,6 +19,19 @@ Cloud Agents API / SDK keys (`crsr_…`) do **not** return billing usage.
 
 ## Install
 
+### HACS (custom repository)
+
+1. In HACS → **⋯** → **Custom repositories**, add:
+   - Repository: `https://github.com/Vikedlol/ha-cursor-sensor`
+   - Category: **Integration**
+2. Search for **Cursor Usage** and download/install it.
+3. Restart Home Assistant.
+4. Go to **Settings → Devices & services → Add integration → Cursor Usage**.
+
+Not listed in the default HACS store yet — custom repository only.
+
+### Manual
+
 1. Copy `custom_components/cursor_usage` into your Home Assistant `config/custom_components/` directory so you have:
 
    ```text
