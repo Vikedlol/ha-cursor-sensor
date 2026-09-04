@@ -36,6 +36,12 @@
       },
       "on_demand": {
         "name": "On-demand spend"
+      },
+      "models_cost": {
+        "name": "Models cost"
+      },
+      "model_spend": {
+        "name": "{model}"
       }
     }
   }

@@ -14,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class CursorUsageCoordinator(DataUpdateCoordinator[CursorUsageData]):
-    """Coordinator that polls Cursor usage-summary once per hour."""
+    """Coordinator that polls Cursor usage once per hour."""
 
     def __init__(self, hass: HomeAssistant, client: CursorApiClient) -> None:
         """Initialize the coordinator."""
@@ -27,9 +27,9 @@ class CursorUsageCoordinator(DataUpdateCoordinator[CursorUsageData]):
         self.client = client
 
     async def _async_update_data(self) -> CursorUsageData:
-        """Fetch the latest usage summary from Cursor."""
+        """Fetch usage summary and per-model aggregated spend."""
         try:
-            return await self.client.async_get_usage_summary()
+            return await self.client.async_get_usage()
         except CursorAuthError as err:
             raise UpdateFailed(f"Cursor authentication failed: {err}") from err
         except CursorApiError as err:

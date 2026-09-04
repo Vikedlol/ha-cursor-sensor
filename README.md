@@ -6,11 +6,12 @@ Custom integration that exposes your Cursor plan usage and on-demand spend as Ho
 
 **Official** Cursor usage APIs (Admin / Analytics) are **Enterprise-only** and use an Admin API key against `api.cursor.com`.
 
-This integration targets **personal / Pro** accounts and polls the same undocumented dashboard endpoint the web UI uses:
+This integration targets **personal / Pro** accounts and polls undocumented dashboard endpoints authenticated with the `WorkosCursorSessionToken` cookie:
 
 ```http
-GET https://cursor.com/api/usage-summary
-Cookie: WorkosCursorSessionToken=<token>
+GET  https://cursor.com/api/usage-summary
+GET  https://cursor.com/api/auth/me
+POST https://cursor.com/api/dashboard/get-aggregated-usage-events
 ```
 
 That cookie is not a public API key. It can expire, and Cursor may change the endpoint without notice.
@@ -60,8 +61,37 @@ When the token expires, sensors become unavailable — remove/re-add the integra
 | Plan usage | `%` | `individualUsage.plan.totalPercentUsed` |
 | Plan used | number | Plan allowance consumed (`used` / `limit` / `remaining` in attributes) |
 | On-demand spend | USD | Cents from the API converted to dollars |
+| Models cost | USD | Billing-cycle total from aggregated usage; `models` attribute has the full breakdown |
+| One sensor per model | USD | Spend for that model; token counts in attributes |
 
-Shared attributes include billing cycle start/end and membership type. Poll interval is **1 hour**.
+Shared attributes include billing cycle start/end and membership type. Poll interval is **1 hour**. New models appear as sensors after the next successful poll.
+
+## Local script
+
+Fetch the same data the integration uses without Home Assistant:
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+pip install -r requirements-dev.txt
+
+set CURSOR_SESSION_TOKEN=your_WorkosCursorSessionToken   # Windows cmd
+# export CURSOR_SESSION_TOKEN=...                        # macOS/Linux
+
+python scripts/fetch_usage.py
+python scripts/fetch_usage.py --json
+python scripts/fetch_usage.py --token "user_01::jwt..."
+```
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Parser and HTTP client tests live under `tests/`. They do not need a live Cursor session.
 
 ## Enterprise
 
