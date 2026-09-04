@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from aiohttp import ClientError, ClientResponseError, ClientSession, ClientTimeout
@@ -80,6 +80,41 @@ class ModelUsage:
 
 
 @dataclass(slots=True)
+class UsageProjection:
+    """Linear burn-rate projection for a usage percentage vs the billing cycle."""
+
+    percent_used: float
+    cycle_elapsed_percent: float
+    cycle_days_elapsed: float
+    cycle_days_remaining: float
+    cycle_days_total: float
+    projected_end_percent: float | None
+    days_to_limit: float | None
+    eta: datetime | None
+    within_cycle: bool | None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Serialize for sensor attributes / JSON output."""
+        return {
+            "percent_used": round(self.percent_used, 4),
+            "cycle_elapsed_percent": round(self.cycle_elapsed_percent, 4),
+            "cycle_days_elapsed": round(self.cycle_days_elapsed, 4),
+            "cycle_days_remaining": round(self.cycle_days_remaining, 4),
+            "cycle_days_total": round(self.cycle_days_total, 4),
+            "projected_end_percent": (
+                round(self.projected_end_percent, 2)
+                if self.projected_end_percent is not None
+                else None
+            ),
+            "days_to_limit": (
+                round(self.days_to_limit, 2) if self.days_to_limit is not None else None
+            ),
+            "eta": self.eta.isoformat() if self.eta is not None else None,
+            "within_cycle": self.within_cycle,
+        }
+
+
+@dataclass(slots=True)
 class CursorUsageData:
     """Normalized usage summary from the dashboard API."""
 
@@ -94,6 +129,131 @@ class CursorUsageData:
     total_output_tokens: int = 0
     total_cache_read_tokens: int = 0
     total_cache_write_tokens: int = 0
+
+    @property
+    def total_tokens(self) -> int:
+        """Sum of all token categories for the billing cycle."""
+        api_total = (
+            self.total_input_tokens
+            + self.total_output_tokens
+            + self.total_cache_read_tokens
+            + self.total_cache_write_tokens
+        )
+        if api_total:
+            return api_total
+        return sum(item.total_tokens for item in self.models)
+
+    def project_cursor_models(
+        self, *, now: datetime | None = None
+    ) -> UsageProjection | None:
+        """Project Cursor Models (auto) usage to the end of the billing cycle."""
+        return project_percent_usage(
+            self.plan.auto_percent_used,
+            self.billing_cycle_start,
+            self.billing_cycle_end,
+            now=now,
+        )
+
+    def project_total_usage(
+        self, *, now: datetime | None = None
+    ) -> UsageProjection | None:
+        """Project total plan usage percentage to the end of the billing cycle."""
+        return project_percent_usage(
+            self.plan.total_percent_used,
+            self.billing_cycle_start,
+            self.billing_cycle_end,
+            now=now,
+        )
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp into an aware UTC datetime."""
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def project_percent_usage(
+    percent_used: float | None,
+    cycle_start: str | None,
+    cycle_end: str | None,
+    *,
+    now: datetime | None = None,
+) -> UsageProjection | None:
+    """Linearly project percent used across the billing cycle.
+
+    Assumptions:
+    - usage so far accrued at a constant average rate since cycle start
+    - projected_end_percent = percent_used / cycle_elapsed_fraction
+    - ETA is when that rate would hit 100%
+    """
+    if percent_used is None:
+        return None
+
+    start = _parse_iso_datetime(cycle_start)
+    end = _parse_iso_datetime(cycle_end)
+    if start is None or end is None or end <= start:
+        return None
+
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    else:
+        current = current.astimezone(timezone.utc)
+
+    total_seconds = (end - start).total_seconds()
+    elapsed_seconds = max(0.0, min((current - start).total_seconds(), total_seconds))
+    remaining_seconds = max(0.0, total_seconds - elapsed_seconds)
+
+    cycle_days_total = total_seconds / 86400.0
+    cycle_days_elapsed = elapsed_seconds / 86400.0
+    cycle_days_remaining = remaining_seconds / 86400.0
+    cycle_elapsed_percent = (
+        (elapsed_seconds / total_seconds) * 100.0 if total_seconds else 0.0
+    )
+
+    projected_end_percent: float | None = None
+    days_to_limit: float | None = None
+    eta: datetime | None = None
+    within_cycle: bool | None = None
+
+    if elapsed_seconds > 0:
+        elapsed_fraction = elapsed_seconds / total_seconds
+        projected_end_percent = percent_used / elapsed_fraction
+
+        if percent_used <= 0:
+            days_to_limit = None
+            eta = None
+            within_cycle = None
+        elif percent_used >= 100:
+            days_to_limit = 0.0
+            eta = current
+            within_cycle = current <= end
+        else:
+            # percent per day based on elapsed time
+            rate_per_day = percent_used / cycle_days_elapsed
+            if rate_per_day > 0:
+                days_to_limit = (100.0 - percent_used) / rate_per_day
+                eta = current + timedelta(days=days_to_limit)
+                within_cycle = eta <= end
+
+    return UsageProjection(
+        percent_used=percent_used,
+        cycle_elapsed_percent=cycle_elapsed_percent,
+        cycle_days_elapsed=cycle_days_elapsed,
+        cycle_days_remaining=cycle_days_remaining,
+        cycle_days_total=cycle_days_total,
+        projected_end_percent=projected_end_percent,
+        days_to_limit=days_to_limit,
+        eta=eta,
+        within_cycle=within_cycle,
+    )
 
 
 def _as_float(value: Any) -> float | None:

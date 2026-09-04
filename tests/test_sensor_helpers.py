@@ -3,27 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import re
-
-
-def _load_slugify():
-    """Load _slugify_model without importing homeassistant-dependent sensor.py."""
-    # Mirror the helper used by sensor.py so regressions are caught in CI
-    # without requiring a full Home Assistant install.
-    pattern = re.compile(r"[^a-z0-9]+")
-
-    def slugify_model(model: str) -> str:
-        slug = pattern.sub("_", model.lower()).strip("_")
-        return slug or "unknown"
-
-    return slugify_model
-
-
-def test_slugify_model() -> None:
-    slugify = _load_slugify()
-    assert slugify("claude-4.6-opus-high-thinking") == "claude_4_6_opus_high_thinking"
-    assert slugify("Composer 2") == "composer_2"
-    assert slugify("!!!") == "unknown"
 
 
 def test_sensor_module_exists() -> None:
@@ -35,7 +14,12 @@ def test_sensor_module_exists() -> None:
         / "sensor.py"
     )
     assert path.is_file()
-    # Syntax check only — do not execute (HA imports).
     source = path.read_text(encoding="utf-8")
     compile(source, str(path), "exec")
-    assert "CursorModelSpendSensor" in source
+    assert "CursorModelSpendSensor" not in source
+    assert "model_costs" in source
+    assert "model_tokens" in source
+    assert "tokens_used" in source
+    assert "cursor_models_projected" in source
+    assert "total_projected" in source
+    assert "ATTR_MODELS" in source

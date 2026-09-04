@@ -18,9 +18,9 @@ def usage_summary_payload() -> dict:
                 "used": 1500,
                 "limit": 2000,
                 "remaining": 500,
-                "autoPercentUsed": 10,
-                "apiPercentUsed": 75,
-                "totalPercentUsed": 80,
+                "autoPercentUsed": 1.24,
+                "apiPercentUsed": 3.0,
+                "totalPercentUsed": 1.24,
             },
             "onDemand": {
                 "enabled": True,

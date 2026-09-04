@@ -20,8 +20,9 @@ def test_parse_usage_summary(usage_summary_payload: dict) -> None:
     assert data.plan.used == 1500
     assert data.plan.limit == 2000
     assert data.plan.remaining == 500
-    assert data.plan.total_percent_used == 80
-    assert data.plan.api_percent_used == 75
+    assert data.plan.auto_percent_used == 1.24
+    assert data.plan.api_percent_used == 3.0
+    assert data.plan.total_percent_used == 1.24
     assert data.on_demand.enabled is True
     assert data.on_demand.used == 2309
     assert data.on_demand.limit is None
@@ -54,7 +55,6 @@ def test_parse_aggregated_usage(aggregated_payload: dict) -> None:
     assert models[0].total_cents == 12.5
     assert models[0].total_usd == 0.125
     assert models[0].total_tokens == 375
-
     assert totals["total_cost_cents"] == 13.75
     assert totals["total_input_tokens"] == 115
     assert totals["total_output_tokens"] == 225

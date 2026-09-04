@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-import re
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -15,12 +14,12 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .api import CursorUsageData, ModelUsage
+from .api import CursorUsageData, UsageProjection
 from .const import (
     ATTR_API_PERCENT_USED,
     ATTR_AUTO_PERCENT_USED,
@@ -32,7 +31,6 @@ from .const import (
     ATTR_INPUT_TOKENS,
     ATTR_LIMIT,
     ATTR_MEMBERSHIP_TYPE,
-    ATTR_MODEL,
     ATTR_MODELS,
     ATTR_OUTPUT_TOKENS,
     ATTR_REMAINING,
@@ -43,8 +41,6 @@ from .const import (
 )
 from .coordinator import CursorUsageCoordinator
 
-_MODEL_SLUG_RE = re.compile(r"[^a-z0-9]+")
-
 
 @dataclass(frozen=True, kw_only=True)
 class CursorSensorEntityDescription(SensorEntityDescription):
@@ -54,10 +50,20 @@ class CursorSensorEntityDescription(SensorEntityDescription):
     attrs_fn: Callable[[CursorUsageData], dict[str, Any]]
 
 
-def _slugify_model(model: str) -> str:
-    """Create a stable unique_id fragment from a model name."""
-    slug = _MODEL_SLUG_RE.sub("_", model.lower()).strip("_")
-    return slug or "unknown"
+def _projection_attrs(projection: UsageProjection | None) -> dict[str, Any]:
+    """Flatten a usage projection into sensor attributes."""
+    if projection is None:
+        return {
+            "projected_end_percent": None,
+            "days_to_limit": None,
+            "eta": None,
+            "within_cycle": None,
+            "cycle_elapsed_percent": None,
+            "cycle_days_elapsed": None,
+            "cycle_days_remaining": None,
+            "cycle_days_total": None,
+        }
+    return projection.as_dict()
 
 
 def _common_attrs(data: CursorUsageData) -> dict[str, Any]:
@@ -82,6 +88,22 @@ def _plan_attrs(data: CursorUsageData) -> dict[str, Any]:
     }
 
 
+def _cursor_models_attrs(data: CursorUsageData) -> dict[str, Any]:
+    """Attributes for Cursor Models percent / projection sensors."""
+    return {
+        **_plan_attrs(data),
+        **_projection_attrs(data.project_cursor_models()),
+    }
+
+
+def _total_usage_attrs(data: CursorUsageData) -> dict[str, Any]:
+    """Attributes for total usage percent / projection sensors."""
+    return {
+        **_plan_attrs(data),
+        **_projection_attrs(data.project_total_usage()),
+    }
+
+
 def _on_demand_attrs(data: CursorUsageData) -> dict[str, Any]:
     """Attributes for on-demand spend sensor."""
     used_cents = data.on_demand.used
@@ -96,11 +118,47 @@ def _on_demand_attrs(data: CursorUsageData) -> dict[str, Any]:
 
 
 def _models_attrs(data: CursorUsageData) -> dict[str, Any]:
-    """Attributes for the models overview sensor."""
+    """Attributes for the models cost sensor, including per-model breakdown."""
     breakdown = {
         item.model: {
-            ATTR_TOTAL_CENTS: item.total_cents,
             "total_usd": item.total_usd,
+            ATTR_TOTAL_CENTS: item.total_cents,
+            ATTR_INPUT_TOKENS: item.input_tokens,
+            ATTR_OUTPUT_TOKENS: item.output_tokens,
+            ATTR_CACHE_READ_TOKENS: item.cache_read_tokens,
+            ATTR_CACHE_WRITE_TOKENS: item.cache_write_tokens,
+            "total_tokens": item.total_tokens,
+        }
+        for item in data.models
+    }
+    model_costs = {
+        item.model: item.total_usd for item in data.models if item.total_usd is not None
+    }
+    return {
+        **_common_attrs(data),
+        ATTR_MODELS: breakdown,
+        "model_costs": model_costs,
+        ATTR_INPUT_TOKENS: data.total_input_tokens,
+        ATTR_OUTPUT_TOKENS: data.total_output_tokens,
+        ATTR_CACHE_READ_TOKENS: data.total_cache_read_tokens,
+        ATTR_CACHE_WRITE_TOKENS: data.total_cache_write_tokens,
+        ATTR_TOTAL_CENTS: data.total_cost_cents,
+        "total_tokens": data.total_tokens,
+        "model_count": len(data.models),
+    }
+
+
+def _tokens_to_millions(value: int | float) -> float:
+    """Convert a token count to millions."""
+    return round(float(value) / 1_000_000.0, 4)
+
+
+def _tokens_attrs(data: CursorUsageData) -> dict[str, Any]:
+    """Attributes for the tokens used sensor (state is in millions)."""
+    breakdown = {
+        item.model: {
+            "total_tokens_millions": _tokens_to_millions(item.total_tokens),
+            "total_tokens": item.total_tokens,
             ATTR_INPUT_TOKENS: item.input_tokens,
             ATTR_OUTPUT_TOKENS: item.output_tokens,
             ATTR_CACHE_READ_TOKENS: item.cache_read_tokens,
@@ -108,14 +166,24 @@ def _models_attrs(data: CursorUsageData) -> dict[str, Any]:
         }
         for item in data.models
     }
+    model_tokens = {
+        item.model: _tokens_to_millions(item.total_tokens) for item in data.models
+    }
     return {
         **_common_attrs(data),
         ATTR_MODELS: breakdown,
+        "model_tokens": model_tokens,
+        "total_tokens": data.total_tokens,
         ATTR_INPUT_TOKENS: data.total_input_tokens,
         ATTR_OUTPUT_TOKENS: data.total_output_tokens,
         ATTR_CACHE_READ_TOKENS: data.total_cache_read_tokens,
         ATTR_CACHE_WRITE_TOKENS: data.total_cache_write_tokens,
-        ATTR_TOTAL_CENTS: data.total_cost_cents,
+        "input_tokens_millions": _tokens_to_millions(data.total_input_tokens),
+        "output_tokens_millions": _tokens_to_millions(data.total_output_tokens),
+        "cache_read_tokens_millions": _tokens_to_millions(data.total_cache_read_tokens),
+        "cache_write_tokens_millions": _tokens_to_millions(
+            data.total_cache_write_tokens
+        ),
         "model_count": len(data.models),
     }
 
@@ -130,14 +198,58 @@ def _models_total_usd(data: CursorUsageData) -> float | None:
     return round(cents / 100.0, 4)
 
 
+def _projected_end(projection: UsageProjection | None) -> float | None:
+    """Return projected end-of-cycle percent, if available."""
+    if projection is None or projection.projected_end_percent is None:
+        return None
+    return round(projection.projected_end_percent, 2)
+
+
 SENSORS: tuple[CursorSensorEntityDescription, ...] = (
+    CursorSensorEntityDescription(
+        key="cursor_models_percent",
+        translation_key="cursor_models_percent",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        value_fn=lambda d: d.plan.auto_percent_used,
+        attrs_fn=_cursor_models_attrs,
+    ),
+    CursorSensorEntityDescription(
+        key="cursor_models_projected",
+        translation_key="cursor_models_projected",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        value_fn=lambda d: _projected_end(d.project_cursor_models()),
+        attrs_fn=_cursor_models_attrs,
+    ),
+    CursorSensorEntityDescription(
+        key="other_models_percent",
+        translation_key="other_models_percent",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        value_fn=lambda d: d.plan.api_percent_used,
+        attrs_fn=_plan_attrs,
+    ),
     CursorSensorEntityDescription(
         key="plan_percent",
         translation_key="plan_percent",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
         value_fn=lambda d: d.plan.total_percent_used,
-        attrs_fn=_plan_attrs,
+        attrs_fn=_total_usage_attrs,
+    ),
+    CursorSensorEntityDescription(
+        key="total_projected",
+        translation_key="total_projected",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        value_fn=lambda d: _projected_end(d.project_total_usage()),
+        attrs_fn=_total_usage_attrs,
     ),
     CursorSensorEntityDescription(
         key="plan_used",
@@ -145,6 +257,7 @@ SENSORS: tuple[CursorSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.plan.used,
         attrs_fn=_plan_attrs,
+        entity_registry_enabled_default=False,
     ),
     CursorSensorEntityDescription(
         key="on_demand",
@@ -168,6 +281,15 @@ SENSORS: tuple[CursorSensorEntityDescription, ...] = (
         value_fn=_models_total_usd,
         attrs_fn=_models_attrs,
     ),
+    CursorSensorEntityDescription(
+        key="tokens_used",
+        translation_key="tokens_used",
+        native_unit_of_measurement="M",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        value_fn=lambda d: _tokens_to_millions(d.total_tokens),
+        attrs_fn=_tokens_attrs,
+    ),
 )
 
 
@@ -179,33 +301,11 @@ async def async_setup_entry(
     """Set up Cursor Usage sensors from a config entry."""
     coordinator: CursorUsageCoordinator = hass.data[DOMAIN][entry.entry_id]
     name = entry.data.get(CONF_NAME) or entry.title
-    known_models: set[str] = set()
 
     async_add_entities(
         CursorUsageSensor(coordinator, entry, description, name)
         for description in SENSORS
     )
-
-    @callback
-    def _async_add_model_sensors() -> None:
-        """Create a spend sensor for each newly seen model."""
-        if not coordinator.data:
-            return
-
-        new_entities: list[CursorModelSpendSensor] = []
-        for model_usage in coordinator.data.models:
-            if model_usage.model in known_models:
-                continue
-            known_models.add(model_usage.model)
-            new_entities.append(
-                CursorModelSpendSensor(coordinator, entry, name, model_usage.model)
-            )
-
-        if new_entities:
-            async_add_entities(new_entities)
-
-    _async_add_model_sensors()
-    entry.async_on_unload(coordinator.async_add_listener(_async_add_model_sensors))
 
 
 class CursorUsageSensor(
@@ -243,72 +343,3 @@ class CursorUsageSensor(
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra attributes from the latest summary."""
         return self.entity_description.attrs_fn(self.coordinator.data)
-
-
-class CursorModelSpendSensor(
-    CoordinatorEntity[CursorUsageCoordinator], SensorEntity
-):
-    """Per-model spend sensor for the current billing cycle."""
-
-    _attr_has_entity_name = True
-    _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_native_unit_of_measurement = "USD"
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_suggested_display_precision = 2
-    _attr_translation_key = "model_spend"
-
-    def __init__(
-        self,
-        coordinator: CursorUsageCoordinator,
-        entry: ConfigEntry,
-        device_name: str,
-        model: str,
-    ) -> None:
-        """Initialize a model spend sensor."""
-        super().__init__(coordinator)
-        self._model = model
-        self._attr_unique_id = f"{entry.entry_id}_model_{_slugify_model(model)}"
-        self._attr_translation_placeholders = {"model": model}
-        self._attr_name = model
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=device_name,
-            manufacturer="Cursor",
-            model="Usage",
-        )
-
-    def _model_usage(self) -> ModelUsage | None:
-        """Find this model's row in the latest coordinator data."""
-        if not self.coordinator.data:
-            return None
-        for item in self.coordinator.data.models:
-            if item.model == self._model:
-                return item
-        return None
-
-    @property
-    def native_value(self) -> float | None:
-        """Return model cost in USD for the billing cycle."""
-        usage = self._model_usage()
-        return usage.total_usd if usage else None
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return token and cost attributes for this model."""
-        data = self.coordinator.data
-        usage = self._model_usage()
-        attrs = _common_attrs(data) if data else {}
-        attrs[ATTR_MODEL] = self._model
-        if usage is None:
-            return attrs
-        attrs.update(
-            {
-                ATTR_TOTAL_CENTS: usage.total_cents,
-                ATTR_INPUT_TOKENS: usage.input_tokens,
-                ATTR_OUTPUT_TOKENS: usage.output_tokens,
-                ATTR_CACHE_READ_TOKENS: usage.cache_read_tokens,
-                ATTR_CACHE_WRITE_TOKENS: usage.cache_write_tokens,
-                "total_tokens": usage.total_tokens,
-            }
-        )
-        return attrs

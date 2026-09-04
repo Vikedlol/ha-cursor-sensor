@@ -58,13 +58,17 @@ When the token expires, sensors become unavailable — remove/re-add the integra
 
 | Entity | State | Notes |
 |--------|-------|--------|
-| Plan usage | `%` | `individualUsage.plan.totalPercentUsed` |
-| Plan used | number | Plan allowance consumed (`used` / `limit` / `remaining` in attributes) |
+| Cursor Models | `%` | Dashboard **Cursor Models** bar (`autoPercentUsed`); projection attrs included |
+| Cursor Models projected | `%` | Linear estimate of Cursor Models % at cycle end; `eta` / `days_to_limit` in attributes |
+| Other Models | `%` | Dashboard **Other Models** bar (`apiPercentUsed`) |
+| Plan usage total | `%` | `totalPercentUsed` from the API; projection attrs included |
+| Total usage projected | `%` | Linear estimate of total usage % at cycle end; `eta` / `days_to_limit` in attributes |
+| Plan accounting used | number | Legacy `used` / `limit` / `remaining` (disabled by default; not the dashboard %) |
 | On-demand spend | USD | Cents from the API converted to dollars |
-| Models cost | USD | Billing-cycle total from aggregated usage; `models` attribute has the full breakdown |
-| One sensor per model | USD | Spend for that model; token counts in attributes |
+| Models cost | USD | Cycle total; per-model spend/tokens in `models` and `model_costs` attributes |
+| Tokens used | M | Cycle total tokens in millions; `model_tokens` is per-model M; raw counts in attributes |
 
-Shared attributes include billing cycle start/end and membership type. Poll interval is **1 hour**. New models appear as sensors after the next successful poll.
+Projections assume a constant average burn rate since billing-cycle start. Early in the cycle the estimate can swing a lot. Poll interval is **1 hour**.
 
 ## Local script
 

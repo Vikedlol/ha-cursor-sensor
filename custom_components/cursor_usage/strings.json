@@ -28,11 +28,23 @@
   },
   "entity": {
     "sensor": {
+      "cursor_models_percent": {
+        "name": "Cursor Models"
+      },
+      "cursor_models_projected": {
+        "name": "Cursor Models projected"
+      },
+      "other_models_percent": {
+        "name": "Other Models"
+      },
       "plan_percent": {
-        "name": "Plan usage"
+        "name": "Plan usage total"
+      },
+      "total_projected": {
+        "name": "Total usage projected"
       },
       "plan_used": {
-        "name": "Plan used"
+        "name": "Plan accounting used"
       },
       "on_demand": {
         "name": "On-demand spend"
@@ -40,8 +52,8 @@
       "models_cost": {
         "name": "Models cost"
       },
-      "model_spend": {
-        "name": "{model}"
+      "tokens_used": {
+        "name": "Tokens used"
       }
     }
   }

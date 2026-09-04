@@ -35,34 +35,95 @@ def _format_usd(cents: float | None) -> str:
     return f"${cents / 100.0:.4f}"
 
 
-def _print_human(data: CursorUsageData) -> None:
-    print(f"Membership:     {data.membership_type or 'n/a'}")
-    print(f"Billing cycle:  {data.billing_cycle_start} → {data.billing_cycle_end}")
+def _format_percent(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.2f}%"
+
+
+def _format_millions(tokens: int | float) -> str:
+    return f"{tokens / 1_000_000.0:.2f}M"
+
+
+def _format_projection(label: str, projection) -> None:
+    if projection is None:
+        print(f"{label:<18}n/a")
+        return
+    projected = (
+        f"{projection.projected_end_percent:.1f}%"
+        if projection.projected_end_percent is not None
+        else "n/a"
+    )
+    if projection.days_to_limit is None:
+        eta = "n/a (no burn yet)"
+    elif projection.within_cycle is False:
+        eta = (
+            f"after cycle ({projection.days_to_limit:.1f}d @ current rate; "
+            f"eta {projection.eta.date() if projection.eta else 'n/a'})"
+        )
+    elif projection.percent_used >= 100:
+        eta = "already at/over limit"
+    else:
+        eta = (
+            f"{projection.days_to_limit:.1f}d "
+            f"({projection.eta.date() if projection.eta else 'n/a'})"
+        )
     print(
-        "Plan:           "
-        f"{data.plan.used}/{data.plan.limit} "
-        f"({data.plan.total_percent_used}% used, remaining {data.plan.remaining})"
+        f"{label:<18}{projected} at cycle end "
+        f"(elapsed {projection.cycle_elapsed_percent:.1f}%, "
+        f"{projection.cycle_days_remaining:.1f}d left; ETA 100%: {eta})"
+    )
+
+
+def _print_human(data: CursorUsageData) -> None:
+    print(f"Membership:       {data.membership_type or 'n/a'}")
+    print(f"Billing cycle:    {data.billing_cycle_start} → {data.billing_cycle_end}")
+    # Dashboard "Included in Pro" bars:
+    # autoPercentUsed ≈ Cursor Models, apiPercentUsed ≈ Other Models.
+    print(f"Cursor Models:    {_format_percent(data.plan.auto_percent_used)}")
+    print(f"Other Models:     {_format_percent(data.plan.api_percent_used)}")
+    print(f"Total (API):      {_format_percent(data.plan.total_percent_used)}")
+    _format_projection("Cursor projected:", data.project_cursor_models())
+    _format_projection("Total projected:", data.project_total_usage())
+    print(
+        "Plan accounting:  "
+        f"{data.plan.used}/{data.plan.limit} remaining {data.plan.remaining} "
+        "(internal legacy fields; not the dashboard % bars)"
     )
     on_demand = (
         _format_usd(data.on_demand.used)
         if data.on_demand.enabled
         else "disabled"
     )
-    print(f"On-demand:      {on_demand}")
-    print(f"Models cost:    {_format_usd(data.total_cost_cents)}")
+    print(f"On-demand:        {on_demand}")
+    print(f"Models cost:      {_format_usd(data.total_cost_cents)}")
+    print(
+        f"Tokens used:      {_format_millions(data.total_tokens)} "
+        f"(in={_format_millions(data.total_input_tokens)} "
+        f"out={_format_millions(data.total_output_tokens)} "
+        f"cache_r={_format_millions(data.total_cache_read_tokens)} "
+        f"cache_w={_format_millions(data.total_cache_write_tokens)}; "
+        f"raw={data.total_tokens:,})"
+    )
     if not data.models:
-        print("Models:         (none)")
+        print("Models:           (none)")
         return
     print("Models:")
     for item in data.models:
         print(
-            f"  - {item.model}: {_format_usd(item.total_cents)} "
-            f"(in={item.input_tokens} out={item.output_tokens} "
-            f"cache_r={item.cache_read_tokens} cache_w={item.cache_write_tokens})"
+            f"  - {item.model}: {_format_usd(item.total_cents)} / "
+            f"{_format_millions(item.total_tokens)} "
+            f"(in={_format_millions(item.input_tokens)} "
+            f"out={_format_millions(item.output_tokens)} "
+            f"cache_r={_format_millions(item.cache_read_tokens)} "
+            f"cache_w={_format_millions(item.cache_write_tokens)})"
         )
 
 
+# Avoid double projection calls in JSON output
 def _to_dict(data: CursorUsageData) -> dict:
+    cursor_proj = data.project_cursor_models()
+    total_proj = data.project_total_usage()
     return {
         "membership_type": data.membership_type,
         "billing_cycle_start": data.billing_cycle_start,
@@ -72,9 +133,15 @@ def _to_dict(data: CursorUsageData) -> dict:
             "used": data.plan.used,
             "limit": data.plan.limit,
             "remaining": data.plan.remaining,
+            "cursor_models_percent": data.plan.auto_percent_used,
+            "other_models_percent": data.plan.api_percent_used,
             "total_percent_used": data.plan.total_percent_used,
             "api_percent_used": data.plan.api_percent_used,
             "auto_percent_used": data.plan.auto_percent_used,
+        },
+        "projections": {
+            "cursor_models": cursor_proj.as_dict() if cursor_proj else None,
+            "total_usage": total_proj.as_dict() if total_proj else None,
         },
         "on_demand": {
             "enabled": data.on_demand.enabled,
@@ -83,11 +150,19 @@ def _to_dict(data: CursorUsageData) -> dict:
             "remaining": data.on_demand.remaining,
         },
         "total_cost_cents": data.total_cost_cents,
+        "total_tokens": data.total_tokens,
+        "total_tokens_millions": round(data.total_tokens / 1_000_000.0, 4),
+        "total_input_tokens": data.total_input_tokens,
+        "total_output_tokens": data.total_output_tokens,
+        "total_cache_read_tokens": data.total_cache_read_tokens,
+        "total_cache_write_tokens": data.total_cache_write_tokens,
         "models": [
             {
                 "model": item.model,
                 "total_cents": item.total_cents,
                 "total_usd": item.total_usd,
+                "total_tokens": item.total_tokens,
+                "total_tokens_millions": round(item.total_tokens / 1_000_000.0, 4),
                 "input_tokens": item.input_tokens,
                 "output_tokens": item.output_tokens,
                 "cache_read_tokens": item.cache_read_tokens,
