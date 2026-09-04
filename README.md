@@ -70,6 +70,10 @@ When the token expires, sensors become unavailable — remove/re-add the integra
 
 Projections assume a constant average burn rate since billing-cycle start. Early in the cycle the estimate can swing a lot. Poll interval is **1 hour**.
 
+## Brand icon
+
+Brand assets live in `custom_components/cursor_usage/brand/` and follow Cursor’s cube-mark styling (flat isometric cube with caret cutout; light + dark variants). Home Assistant 2026.3+ serves these via the local brands API.
+
 ## Local script
 
 Fetch the same data the integration uses without Home Assistant:

@@ -209,6 +209,7 @@ SENSORS: tuple[CursorSensorEntityDescription, ...] = (
     CursorSensorEntityDescription(
         key="cursor_models_percent",
         translation_key="cursor_models_percent",
+        icon="mdi:robot-outline",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
@@ -218,6 +219,7 @@ SENSORS: tuple[CursorSensorEntityDescription, ...] = (
     CursorSensorEntityDescription(
         key="cursor_models_projected",
         translation_key="cursor_models_projected",
+        icon="mdi:chart-timeline-variant",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
@@ -227,6 +229,7 @@ SENSORS: tuple[CursorSensorEntityDescription, ...] = (
     CursorSensorEntityDescription(
         key="other_models_percent",
         translation_key="other_models_percent",
+        icon="mdi:api",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
@@ -236,6 +239,7 @@ SENSORS: tuple[CursorSensorEntityDescription, ...] = (
     CursorSensorEntityDescription(
         key="plan_percent",
         translation_key="plan_percent",
+        icon="mdi:percent-outline",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
@@ -245,6 +249,7 @@ SENSORS: tuple[CursorSensorEntityDescription, ...] = (
     CursorSensorEntityDescription(
         key="total_projected",
         translation_key="total_projected",
+        icon="mdi:trending-up",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
@@ -254,6 +259,7 @@ SENSORS: tuple[CursorSensorEntityDescription, ...] = (
     CursorSensorEntityDescription(
         key="plan_used",
         translation_key="plan_used",
+        icon="mdi:counter",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.plan.used,
         attrs_fn=_plan_attrs,
@@ -262,6 +268,7 @@ SENSORS: tuple[CursorSensorEntityDescription, ...] = (
     CursorSensorEntityDescription(
         key="on_demand",
         translation_key="on_demand",
+        icon="mdi:cash-plus",
         native_unit_of_measurement="USD",
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -274,6 +281,7 @@ SENSORS: tuple[CursorSensorEntityDescription, ...] = (
     CursorSensorEntityDescription(
         key="models_cost",
         translation_key="models_cost",
+        icon="mdi:currency-usd",
         native_unit_of_measurement="USD",
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -284,6 +292,7 @@ SENSORS: tuple[CursorSensorEntityDescription, ...] = (
     CursorSensorEntityDescription(
         key="tokens_used",
         translation_key="tokens_used",
+        icon="mdi:hexagon-multiple-outline",
         native_unit_of_measurement="M",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
