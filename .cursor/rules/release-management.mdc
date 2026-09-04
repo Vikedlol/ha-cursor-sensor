@@ -1,0 +1,42 @@
+---
+description: HACS/GitHub release management — version bumps, tags, and publishing
+alwaysApply: true
+---
+
+# Release management
+
+HACS shows **commit SHAs** unless a **GitHub Release** exists. Tags alone are not enough; CI creates the release from the tag.
+
+## Source of truth
+
+- Version lives only in `custom_components/cursor_usage/manifest.json` → `"version"`.
+- Tag must match that version (optional `v` prefix: `0.4.2` or `v0.4.2`).
+- `hacs.json` has `hide_default_branch: true` — always ship a release; never leave users without one.
+
+## When to bump
+
+| Change | Bump |
+|--------|------|
+| Break sensors / config / entities | MAJOR |
+| New sensors or features | MINOR |
+| Fixes, icons, docs, chore | PATCH |
+
+## Release checklist (agent)
+
+1. Bump `"version"` in `manifest.json` (and nothing else for version).
+2. Commit on `main` with a normal message (feature/fix why — not "bump version" alone unless that is the only change).
+3. Ensure working tree is clean and `main` is pushed.
+4. Create annotated tag matching the manifest version:
+   ```bash
+   git tag -a 0.4.2 -m "Release 0.4.2"
+   git push origin main
+   git push origin 0.4.2
+   ```
+5. Confirm `.github/workflows/release.yml` succeeds and https://github.com/Vikedlol/ha-cursor-sensor/releases shows the new release.
+6. Do **not** rewrite or force-push release tags unless the user explicitly asks.
+
+## Do not
+
+- Ship commits that change behavior without a version bump + release if users install via HACS.
+- Create a tag whose number ≠ `manifest.json` `version` (workflow will fail).
+- Publish only a lightweight tag and skip the push — remote tag push triggers the release.
