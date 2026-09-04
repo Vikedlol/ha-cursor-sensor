@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Cursor Usage",
+        "description": "Paste your WorkosCursorSessionToken cookie from cursor.com/dashboard/usage (DevTools \u2192 Application \u2192 Cookies).",
+        "data": {
+          "session_token": "Session token",
+          "name": "Name"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Cursor Usage",
+        "description": "Your Cursor session token expired or was rejected. Paste a fresh WorkosCursorSessionToken cookie.",
+        "data": {
+          "session_token": "Session token"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid or expired session token",
+      "cannot_connect": "Could not reach Cursor usage API"
+    },
+    "abort": {
+      "already_configured": "Cursor Usage is already configured",
+      "reauth_successful": "Re-authentication successful"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "plan_percent": {
+        "name": "Plan usage"
+      },
+      "plan_used": {
+        "name": "Plan used"
+      },
+      "on_demand": {
+        "name": "On-demand spend"
+      }
+    }
+  }
+}
