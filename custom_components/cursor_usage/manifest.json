@@ -3,9 +3,9 @@
   "name": "Cursor Usage",
   "codeowners": [],
   "config_flow": true,
-  "documentation": "https://github.com/apastu/ha-cursor-sensor",
+  "documentation": "https://github.com/Vikedlol/ha-cursor-sensor",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/apastu/ha-cursor-sensor/issues",
+  "issue_tracker": "https://github.com/Vikedlol/ha-cursor-sensor/issues",
   "requirements": [],
   "version": "0.4.1"
 }
