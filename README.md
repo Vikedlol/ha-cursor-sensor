@@ -92,6 +92,10 @@ python scripts/fetch_usage.py --json
 python scripts/fetch_usage.py --token "user_01::jwt..."
 ```
 
+## Releases
+
+Version is the `"version"` field in `custom_components/cursor_usage/manifest.json`. Pushing that version to `main` runs **Auto Release**, which creates the GitHub tag and release HACS needs. Manual tags still work via the **Release** workflow.
+
 ## Tests
 
 ```bash
