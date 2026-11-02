@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Release management
 
-HACS shows **commit SHAs** unless a **GitHub Release** exists. Tags alone are not enough; CI creates the release from the tag.
+HACS shows **commit SHAs** unless a **GitHub Release** exists. Tags alone are not enough.
 
 ## Source of truth
 
@@ -23,20 +23,18 @@ HACS shows **commit SHAs** unless a **GitHub Release** exists. Tags alone are no
 
 ## Release checklist (agent)
 
-1. Bump `"version"` in `manifest.json` (and nothing else for version).
-2. Commit on `main` with a normal message (feature/fix why — not "bump version" alone unless that is the only change).
-3. Ensure working tree is clean and `main` is pushed.
-4. Create annotated tag matching the manifest version:
+1. Bump `"version"` in `manifest.json` in the same PR as the user-facing change (and nothing else for version).
+2. Merge/push to `main`. **Auto Release** (`.github/workflows/auto-release.yml`) creates the matching tag + GitHub Release when that version is new.
+3. Confirm https://github.com/Vikedlol/ha-cursor-sensor/releases shows the new release.
+4. Manual tag only if automation failed:
    ```bash
    git tag -a 0.4.2 -m "Release 0.4.2"
-   git push origin main
    git push origin 0.4.2
    ```
-5. Confirm `.github/workflows/release.yml` succeeds and https://github.com/Vikedlol/ha-cursor-sensor/releases shows the new release.
-6. Do **not** rewrite or force-push release tags unless the user explicitly asks.
+5. Do **not** rewrite or force-push release tags unless the user explicitly asks.
 
 ## Do not
 
-- Ship commits that change behavior without a version bump + release if users install via HACS.
+- Ship commits that change behavior without a version bump if users install via HACS.
 - Create a tag whose number ≠ `manifest.json` `version` (workflow will fail).
-- Publish only a lightweight tag and skip the push — remote tag push triggers the release.
+- Manually tag after every healthy Auto Release merge — bump + merge is enough.
