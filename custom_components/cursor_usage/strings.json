@@ -11,7 +11,7 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate Cursor Usage",
-        "description": "Your Cursor session token expired or was rejected. Paste a fresh WorkosCursorSessionToken cookie.",
+        "description": "The Cursor session token for {name} expired or was rejected. Paste a fresh WorkosCursorSessionToken cookie from cursor.com (DevTools → Application → Cookies).",
         "data": {
           "session_token": "Session token"
         }

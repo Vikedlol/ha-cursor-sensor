@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -18,11 +19,30 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
+STEP_REAUTH_DATA_SCHEMA = vol.Schema({vol.Required(CONF_SESSION_TOKEN): str})
+
 
 class CursorUsageConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Cursor Usage."""
 
     VERSION = 1
+
+    async def _async_validate_token(
+        self, token: str
+    ) -> dict[str, str]:
+        """Validate a session token against the Cursor usage API.
+
+        Returns an errors dict suitable for async_show_form (empty on success).
+        """
+        session = async_get_clientsession(self.hass)
+        client = CursorApiClient(session, token)
+        try:
+            await client.async_get_usage_summary()
+        except CursorAuthError:
+            return {"base": "invalid_auth"}
+        except CursorApiError:
+            return {"base": "cannot_connect"}
+        return {}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -33,17 +53,9 @@ class CursorUsageConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             token = user_input[CONF_SESSION_TOKEN].strip()
             name = user_input.get(CONF_NAME, DEFAULT_NAME).strip() or DEFAULT_NAME
+            errors = await self._async_validate_token(token)
 
-            session = async_get_clientsession(self.hass)
-            client = CursorApiClient(session, token)
-
-            try:
-                await client.async_get_usage_summary()
-            except CursorAuthError:
-                errors["base"] = "invalid_auth"
-            except CursorApiError:
-                errors["base"] = "cannot_connect"
-            else:
+            if not errors:
                 # One Cursor account per Home Assistant instance.
                 await self.async_set_unique_id(DOMAIN)
                 self._abort_if_unique_id_configured()
@@ -63,7 +75,7 @@ class CursorUsageConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_reauth(
-        self, entry_data: dict[str, Any]
+        self, entry_data: Mapping[str, Any]
     ) -> config_entries.ConfigFlowResult:
         """Handle reauthentication when the session token expires."""
         return await self.async_step_reauth_confirm()
@@ -77,16 +89,9 @@ class CursorUsageConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             token = user_input[CONF_SESSION_TOKEN].strip()
-            session = async_get_clientsession(self.hass)
-            client = CursorApiClient(session, token)
+            errors = await self._async_validate_token(token)
 
-            try:
-                await client.async_get_usage_summary()
-            except CursorAuthError:
-                errors["base"] = "invalid_auth"
-            except CursorApiError:
-                errors["base"] = "cannot_connect"
-            else:
+            if not errors:
                 return self.async_update_reload_and_abort(
                     reauth_entry,
                     data_updates={CONF_SESSION_TOKEN: token},
@@ -94,6 +99,9 @@ class CursorUsageConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=vol.Schema({vol.Required(CONF_SESSION_TOKEN): str}),
+            data_schema=STEP_REAUTH_DATA_SCHEMA,
             errors=errors,
+            description_placeholders={
+                "name": reauth_entry.title or DEFAULT_NAME,
+            },
         )

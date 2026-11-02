@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import CursorApiClient, CursorApiError, CursorAuthError, CursorUsageData
@@ -27,10 +28,16 @@ class CursorUsageCoordinator(DataUpdateCoordinator[CursorUsageData]):
         self.client = client
 
     async def _async_update_data(self) -> CursorUsageData:
-        """Fetch usage summary and per-model aggregated spend."""
+        """Fetch usage summary and per-model aggregated spend.
+
+        Auth failures raise ConfigEntryAuthFailed so Home Assistant starts the
+        interactive reauth wizard instead of only marking sensors unavailable.
+        """
         try:
             return await self.client.async_get_usage()
         except CursorAuthError as err:
-            raise UpdateFailed(f"Cursor authentication failed: {err}") from err
+            raise ConfigEntryAuthFailed(
+                f"Cursor session token is invalid or expired: {err}"
+            ) from err
         except CursorApiError as err:
             raise UpdateFailed(f"Cursor API error: {err}") from err
