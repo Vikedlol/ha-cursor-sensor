@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -299,6 +300,67 @@ def _cookie_header_value(session_token: str) -> str:
     return value
 
 
+def _response_url_str(response: Any) -> str:
+    """Best-effort final URL string from an aiohttp response."""
+    url = getattr(response, "url", None)
+    return str(url) if url is not None else ""
+
+
+def _looks_like_auth_redirect(response: Any) -> bool:
+    """Return True when Cursor bounced the request to a login/auth page."""
+    final_url = _response_url_str(response).lower()
+    if any(marker in final_url for marker in ("/login", "/signin", "/authenticate")):
+        return True
+
+    history = getattr(response, "history", None) or ()
+    for prior in history:
+        prior_url = str(getattr(prior, "url", "")).lower()
+        if any(marker in prior_url for marker in ("/login", "/signin", "/authenticate")):
+            return True
+        if getattr(prior, "status", None) in (401, 403):
+            return True
+    return False
+
+
+async def _read_json_payload(response: Any, url: str) -> Any:
+    """Parse JSON, treating HTML/login bodies as an expired session.
+
+    Reads the body once as text so auth-failure HTML (or an empty body after a
+    bad cookie) is not misclassified as a generic API/JSON error.
+    """
+    content_type = ""
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        content_type = str(headers.get("Content-Type", "")).lower()
+
+    text = await response.text()
+    lowered = text.lower()
+    looks_like_login = (
+        "<html" in lowered or "<!doctype" in lowered or "login" in lowered
+    )
+
+    if content_type and "json" not in content_type:
+        if looks_like_login:
+            raise CursorAuthError(
+                "Session token rejected (non-JSON login response)"
+            )
+        raise CursorApiError(
+            f"Unexpected content-type from {url}: {content_type or 'unknown'}"
+        )
+
+    if not text.strip():
+        raise CursorAuthError("Session token rejected (empty response)")
+
+    try:
+        return json.loads(text)
+    except ValueError as err:
+        if looks_like_login or "not_authenticated" in lowered:
+            raise CursorAuthError(
+                "Session token rejected (invalid or empty response)"
+            ) from err
+        raise CursorApiError(f"Invalid JSON response from {url}") from err
+
+
 def parse_usage_summary(payload: dict[str, Any]) -> CursorUsageData:
     """Parse a usage-summary JSON body into typed data."""
     individual = payload.get("individualUsage")
@@ -405,16 +467,25 @@ class CursorApiClient:
                 headers=self._headers(with_json=body is not None),
                 json=body,
                 timeout=_REQUEST_TIMEOUT,
+                allow_redirects=True,
             ) as response:
                 if response.status in (401, 403):
                     raise CursorAuthError(
                         f"Authentication failed (HTTP {response.status})"
                     )
+                if _looks_like_auth_redirect(response):
+                    raise CursorAuthError(
+                        "Session token rejected (redirected to login)"
+                    )
                 response.raise_for_status()
-                payload = await response.json(content_type=None)
+                payload = await _read_json_payload(response, url)
         except CursorAuthError:
             raise
         except ClientResponseError as err:
+            if err.status in (401, 403):
+                raise CursorAuthError(
+                    f"Authentication failed (HTTP {err.status})"
+                ) from err
             raise CursorApiError(f"HTTP error: {err.status}") from err
         except (ClientError, TimeoutError) as err:
             raise CursorApiError(f"Request failed: {err}") from err
@@ -424,8 +495,11 @@ class CursorApiClient:
         if not isinstance(payload, dict):
             raise CursorApiError(f"Unexpected payload from {url}")
 
-        if payload.get("error") == "not_authenticated":
+        error = payload.get("error")
+        if error in {"not_authenticated", "unauthorized", "unauthenticated"}:
             raise CursorAuthError("Session token rejected by Cursor")
+        if isinstance(error, str) and "auth" in error.lower():
+            raise CursorAuthError(f"Session token rejected by Cursor ({error})")
 
         return payload
 

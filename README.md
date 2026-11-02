@@ -52,7 +52,7 @@ Not listed in the default HACS store yet — custom repository only.
 
 Store the token only in Home Assistant (config entry storage). Do not commit it to git.
 
-When the token expires, sensors become unavailable — remove/re-add the integration or use the re-auth flow after pasting a fresh cookie.
+When the token expires or Cursor returns **401/403**, Home Assistant marks the integration as needing reauthentication and opens the **re-auth wizard** (Settings → Devices & services → Cursor Usage). Paste a fresh `WorkosCursorSessionToken` cookie; the entry updates and reloads without removing the integration.
 
 ## Entities
 

@@ -2,20 +2,40 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from cursor_usage.api import CursorApiClient, CursorAuthError
+from cursor_usage.api import CursorApiClient, CursorApiError, CursorAuthError
 
 
 class _FakeResponse:
     """Minimal async context-manager response."""
 
-    def __init__(self, status: int, payload: Any) -> None:
+    def __init__(
+        self,
+        status: int,
+        payload: Any,
+        *,
+        content_type: str = "application/json",
+        url: str = "https://cursor.com/api/usage-summary",
+        history: tuple[Any, ...] = (),
+        raw_text: str | None = None,
+    ) -> None:
         self.status = status
-        self._payload = payload
+        self.url = url
+        self.history = history
+        self.headers = {"Content-Type": content_type}
+        if raw_text is not None:
+            self._text = raw_text
+        elif isinstance(payload, (dict, list)):
+            self._text = json.dumps(payload)
+        elif payload is None:
+            self._text = ""
+        else:
+            self._text = str(payload)
 
     async def __aenter__(self) -> _FakeResponse:
         return self
@@ -33,8 +53,11 @@ class _FakeResponse:
                 status=self.status,
             )
 
+    async def text(self) -> str:
+        return self._text
+
     async def json(self, content_type: str | None = None) -> Any:
-        return self._payload
+        return json.loads(self._text)
 
 
 def _session_with_routes(routes: dict[tuple[str, str], _FakeResponse]) -> MagicMock:
@@ -124,7 +147,88 @@ async def test_async_get_usage_summary_auth_error() -> None:
     )
     client = CursorApiClient(session, "bad-token")
 
-    with pytest.raises(CursorAuthError):
+    with pytest.raises(CursorAuthError, match="401"):
+        await client.async_get_usage_summary()
+
+
+async def test_async_get_usage_summary_json_not_authenticated() -> None:
+    """200 with not_authenticated error body becomes CursorAuthError."""
+    session = _session_with_routes(
+        {
+            ("GET", "/api/usage-summary"): _FakeResponse(
+                200, {"error": "not_authenticated"}
+            ),
+        }
+    )
+    client = CursorApiClient(session, "expired-token")
+
+    with pytest.raises(CursorAuthError, match="rejected"):
+        await client.async_get_usage_summary()
+
+
+async def test_async_get_usage_summary_html_login_is_auth_error() -> None:
+    """HTML login page (expired cookie redirect body) is CursorAuthError."""
+    session = _session_with_routes(
+        {
+            ("GET", "/api/usage-summary"): _FakeResponse(
+                200,
+                None,
+                content_type="text/html; charset=utf-8",
+                raw_text="<!DOCTYPE html><html><body>Login</body></html>",
+                url="https://cursor.com/login",
+            ),
+        }
+    )
+    client = CursorApiClient(session, "expired-token")
+
+    with pytest.raises(CursorAuthError, match="login"):
+        await client.async_get_usage_summary()
+
+
+async def test_async_get_usage_summary_html_body_on_api_url_is_auth_error() -> None:
+    """HTML body on the API URL (no Location redirect) is still auth failure."""
+    session = _session_with_routes(
+        {
+            ("GET", "/api/usage-summary"): _FakeResponse(
+                200,
+                None,
+                content_type="text/html; charset=utf-8",
+                raw_text="<!DOCTYPE html><html><body>Please log in</body></html>",
+                url="https://cursor.com/api/usage-summary",
+            ),
+        }
+    )
+    client = CursorApiClient(session, "expired-token")
+
+    with pytest.raises(CursorAuthError, match="non-JSON"):
+        await client.async_get_usage_summary()
+
+
+async def test_async_get_usage_summary_empty_body_is_auth_error() -> None:
+    """Empty 200 body is treated as a rejected session."""
+    session = _session_with_routes(
+        {
+            ("GET", "/api/usage-summary"): _FakeResponse(
+                200, None, raw_text=""
+            ),
+        }
+    )
+    client = CursorApiClient(session, "expired-token")
+
+    with pytest.raises(CursorAuthError, match="empty"):
+        await client.async_get_usage_summary()
+
+
+async def test_async_get_usage_summary_server_error_is_api_error() -> None:
+    """Non-auth HTTP failures stay as CursorApiError."""
+    session = _session_with_routes(
+        {
+            ("GET", "/api/usage-summary"): _FakeResponse(500, {"error": "boom"}),
+        }
+    )
+    client = CursorApiClient(session, "user_01::test-token")
+
+    with pytest.raises(CursorApiError, match="HTTP error: 500"):
         await client.async_get_usage_summary()
 
 
